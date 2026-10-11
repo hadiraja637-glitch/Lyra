@@ -22,7 +22,7 @@
         throw new Error(detail);
       }
 
-      const liveAI = new GoogleGenAI({ apiKey: tokenData.token });
+      const liveAI = new GoogleGenAI({ apiKey: tokenData.token, httpOptions: { apiVersion: 'v1beta' } });
       const systemInstruction = `You are Lyra, a warm, natural, intelligent AI companion. Match the user's language, especially English, Pakistani Urdu, and Roman Urdu. Keep the conversation conversational and helpful. User name: ${settings.userName || 'not provided'}. Preferred language: ${settings.preferredLanguage || 'auto'}. Relevant saved memories: ${memories.map((m) => m.content).join('; ') || 'none'}.`;
       const tools = [{
         functionDeclarations: [
