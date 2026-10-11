@@ -87,13 +87,18 @@
 
       this.startVisualizerLoops();
     } catch (err: any) {
-      console.error('[Client WS] Failed to initialize audio/mic:', err);
+      console.error('[Lyra Live] Failed to initialize microphone or connect to Gemini Live:', err);
+      this.isConnected = false;
       this.setState('error');
-      let msg = 'Failed to access microphone. Please allow microphone permissions in your browser.';
-      if (err.name === 'NotAllowedError') {
-        msg = 'Microphone access was denied. Please allow microphone permissions in your browser bar.';
+      let msg = err?.message || 'Could not connect to Lyra voice service. Please try again.';
+      if (err?.name === 'NotAllowedError') {
+        msg = 'Microphone access was denied. Allow microphone permissions in your browser settings, then try again.';
+      } else if (err?.name === 'NotFoundError') {
+        msg = 'No microphone was found. Connect a microphone and try again.';
       }
       this.callbacks.onError(msg);
+      this.disconnect();
+      this.setState('error');
       throw err;
     }
   }
