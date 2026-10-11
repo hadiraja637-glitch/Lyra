@@ -1,190 +1,89 @@
-import { CompanionState, UserSettings, MemoryItem } from '../types/companion';
-
-export interface LiveAudioCallbacks {
-  onStateChange: (state: CompanionState) => void;
-  onTranscriptChunk: (text: string, sender: 'user' | 'lyra') => void;
-  onTurnComplete: () => void;
-  onInterrupted: () => void;
-  onToolCall: (call: { id: string; name: string; args: any; memory?: any }) => void;
-  onError: (error: string) => void;
-  onInputVolume: (volume: number) => void;
-  onOutputVolume: (volume: number) => void;
-}
-
-export class LiveAudioClient {
-  private ws: WebSocket | null = null;
-  private inputAudioCtx: AudioContext | null = null;
-  private outputAudioCtx: AudioContext | null = null;
-  private mediaStream: MediaStream | null = null;
-  private scriptProcessor: ScriptProcessorNode | null = null;
-  private inputAnalyser: AnalyserNode | null = null;
-  private outputAnalyser: AnalyserNode | null = null;
-
-  private activeSources: AudioBufferSourceNode[] = [];
-  private nextPlayTime = 0;
-  private isMuted = false;
-  private isConnected = false;
-  private state: CompanionState = 'idle';
-
-  private callbacks: LiveAudioCallbacks;
-  private animFrameId: number | null = null;
-  private outputVolumeTrackerId: number | null = null;
-
-  constructor(callbacks: LiveAudioCallbacks) {
-    this.callbacks = callbacks;
-  }
-
-  public getState(): CompanionState {
-    return this.state;
-  }
-
-  private setState(newState: CompanionState) {
-    if (this.state === newState) return;
-    this.state = newState;
-    this.callbacks.onStateChange(newState);
-  }
-
-  /**
-   * Connect to the Gemini Live session via WebSocket
-   */
-  public async connect(settings: UserSettings, memories: MemoryItem[] = []): Promise<void> {
-    this.setState('connecting');
-
-    try {
-      // 1. Request microphone permission upfront
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-          sampleRate: 16000,
-        },
+      // 5. Request a short-lived Gemini Live token from our Vercel API.
+      // Vercel Functions are not used as a long-running WebSocket proxy.
+      const tokenResponse = await fetch('/api/live-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userName: settings.userName,
+          preferredLang: settings.preferredLanguage,
+          voice: settings.voice,
+          interests: settings.interests,
+          memories,
+        }),
       });
-      this.mediaStream = stream;
+      const tokenContentType = tokenResponse.headers.get('content-type') || '';
+      const tokenRaw = await tokenResponse.text();
+      let tokenData: any = {};
+      if (tokenContentType.includes('application/json')) {
+        try { tokenData = JSON.parse(tokenRaw); } catch {}
+      }
+      if (!tokenResponse.ok || !tokenData.token) {
+        const detail = tokenData.error || (tokenRaw.startsWith('<') ? 'Vercel returned an HTML error page instead of JSON. Check the deployment and /api/live-token route.' : 'Could not obtain a Gemini Live session token.');
+        throw new Error(detail);
+      }
 
-      // 2. Set up Input AudioContext (16kHz for Gemini input)
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      this.inputAudioCtx = new AudioCtx({ sampleRate: 16000 });
-      await this.inputAudioCtx.resume();
+      const liveAI = new GoogleGenAI({ apiKey: tokenData.token });
+      const systemInstruction = `You are Lyra, a warm, natural, intelligent AI companion. Match the user's language, especially English, Pakistani Urdu, and Roman Urdu. Keep the conversation conversational and helpful. User name: ${settings.userName || 'not provided'}. Preferred language: ${settings.preferredLanguage || 'auto'}. Relevant saved memories: ${memories.map((m) => m.content).join('; ') || 'none'}.`;
+      const tools = [{
+        functionDeclarations: [
+          { name: 'saveMemory', description: 'Save a personal fact only when the user explicitly asks you to remember it or clearly shares a stable preference, goal, or important detail. Do not save secrets.', parameters: { type: Type.OBJECT, properties: { content: { type: Type.STRING }, category: { type: Type.STRING } }, required: ['content', 'category'] } },
+          { name: 'forgetMemory', description: 'Forget a saved memory when the user asks.', parameters: { type: Type.OBJECT, properties: { query: { type: Type.STRING } }, required: ['query'] } },
+          { name: 'setFocusTimer', description: 'Start a focus timer.', parameters: { type: Type.OBJECT, properties: { minutes: { type: Type.NUMBER }, label: { type: Type.STRING } }, required: ['minutes'] } },
+          { name: 'addReminderOrTask', description: 'Add a task or reminder.', parameters: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, priority: { type: Type.STRING } }, required: ['title'] } },
+          { name: 'saveStudyNote', description: 'Save a study note.', parameters: { type: Type.OBJECT, properties: { note: { type: Type.STRING }, topic: { type: Type.STRING } }, required: ['note'] } },
+        ],
+      }];
 
-      // 3. Set up Output AudioContext (24kHz for Gemini output)
-      this.outputAudioCtx = new AudioCtx({ sampleRate: 24000 });
-      await this.outputAudioCtx.resume();
-
-      // Set up Analysers
-      this.inputAnalyser = this.inputAudioCtx.createAnalyser();
-      this.inputAnalyser.fftSize = 256;
-      this.outputAnalyser = this.outputAudioCtx.createAnalyser();
-      this.outputAnalyser.fftSize = 256;
-
-      // 4. Connect microphone to processor
-      const source = this.inputAudioCtx.createMediaStreamSource(stream);
-      this.scriptProcessor = this.inputAudioCtx.createScriptProcessor(4096, 1, 1);
-
-      source.connect(this.inputAnalyser);
-      this.inputAnalyser.connect(this.scriptProcessor);
-      this.scriptProcessor.connect(this.inputAudioCtx.destination);
-
-      // Handle mic audio processing
-      this.scriptProcessor.onaudioprocess = (e) => {
-        if (!this.isConnected || this.isMuted || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-          return;
-        }
-
-        const inputData = e.inputBuffer.getChannelData(0);
-
-        // Calculate RMS volume for audio visualizer
-        let sum = 0;
-        for (let i = 0; i < inputData.length; i++) {
-          sum += inputData[i] * inputData[i];
-        }
-        const rms = Math.sqrt(sum / inputData.length);
-        this.callbacks.onInputVolume(Math.min(1, rms * 5));
-
-        // If user is speaking significantly and Lyra is speaking, local detection can trigger
-        if (rms > 0.04 && this.state === 'speaking') {
-          this.stopAllPlayback();
-          this.setState('listening');
-        } else if (rms > 0.02 && this.state === 'idle') {
-          this.setState('listening');
-        }
-
-        // Convert Float32 to 16-bit PCM little-endian
-        const pcm16 = this.floatTo16BitPCM(inputData);
-        const base64 = this.pcmToBase64(pcm16);
-
-        this.ws.send(
-          JSON.stringify({
-            type: 'audio',
-            data: base64,
-          })
-        );
-      };
-
-      // 5. Connect WebSocket to /live
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/live`;
-      this.ws = new WebSocket(wsUrl);
-
-      this.ws.onopen = () => {
-        console.log('[Client WS] Connected to live bridge, sending init');
-        this.ws?.send(
-          JSON.stringify({
-            type: 'init',
-            userName: settings.userName,
-            preferredLang: settings.preferredLanguage,
-            voice: settings.voice,
-            interests: settings.interests,
-            memories,
-          })
-        );
-      };
-
-      this.ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-
-          if (msg.type === 'ready') {
+      this.session = await liveAI.live.connect({
+        model: 'gemini-3.8-live',
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: settings.voice || 'Kore' } } },
+          systemInstruction,
+          tools,
+        },
+        callbacks: {
+          onopen: () => {
             this.isConnected = true;
             this.setState('listening');
-          } else if (msg.type === 'audio' && msg.audio) {
-            this.handleIncomingAudioChunk(msg.audio);
-          } else if (msg.type === 'text_chunk' && msg.text) {
-            this.callbacks.onTranscriptChunk(msg.text, 'lyra');
-          } else if (msg.type === 'interrupted') {
-            console.log('[Client WS] Model interrupted');
-            this.stopAllPlayback();
-            this.setState('listening');
-            this.callbacks.onInterrupted();
-          } else if (msg.type === 'turn_complete') {
-            this.callbacks.onTurnComplete();
-            // Once all scheduled audio finishes, return to listening state
-            this.checkTurnPlaybackFinished();
-          } else if (msg.type === 'tool_call') {
-            this.callbacks.onToolCall(msg.call);
-          } else if (msg.type === 'error') {
-            console.error('[Client WS] Received error:', msg.error);
-            this.callbacks.onError(msg.error);
-          }
-        } catch (parseErr) {
-          console.error('[Client WS] Parse error:', parseErr);
-        }
-      };
-
-      this.ws.onerror = (e) => {
-        console.error('[Client WS] WebSocket error:', e);
-        this.callbacks.onError('Connection to voice service encountered an error.');
-        this.setState('error');
-      };
-
-      this.ws.onclose = () => {
-        console.log('[Client WS] WebSocket closed');
-        this.isConnected = false;
-        if (this.state !== 'error') {
-          this.setState('idle');
-        }
-      };
+          },
+          onmessage: (serverMsg: any) => {
+            if (serverMsg.serverContent?.modelTurn?.parts) {
+              for (const part of serverMsg.serverContent.modelTurn.parts) {
+                if (part.inlineData?.data) this.handleIncomingAudioChunk(part.inlineData.data);
+                if (part.text) this.callbacks.onTranscriptChunk(part.text, 'lyra');
+              }
+            }
+            if (serverMsg.serverContent?.interrupted) {
+              this.stopAllPlayback();
+              this.setState('listening');
+              this.callbacks.onInterrupted();
+            }
+            if (serverMsg.serverContent?.turnComplete) {
+              this.callbacks.onTurnComplete();
+              this.checkTurnPlaybackFinished();
+            }
+            if (serverMsg.toolCall?.functionCalls) {
+              const functionResponses: any[] = [];
+              for (const call of serverMsg.toolCall.functionCalls) {
+                this.callbacks.onToolCall({ id: call.id || '', name: call.name, args: call.args || {} });
+                functionResponses.push({ id: call.id, name: call.name, response: { status: 'received', message: 'Action was passed to Lyra UI.' } });
+              }
+              try { this.session?.sendToolResponse({ functionResponses }); } catch (toolError) { console.warn('[Lyra Live] Tool response failed:', toolError); }
+            }
+          },
+          onerror: (event: any) => {
+            const message = event?.message || 'Gemini Live connection encountered an error.';
+            this.callbacks.onError(message);
+            this.setState('error');
+          },
+          onclose: (event: any) => {
+            this.isConnected = false;
+            if (this.state !== 'error') this.setState('idle');
+            if (event?.reason) console.info('[Lyra Live] Connection closed:', event.reason);
+          },
+        },
+      });
 
       this.startVisualizerLoops();
     } catch (err: any) {
@@ -275,14 +174,13 @@ export class LiveAudioClient {
    * Send a text message to the live session
    */
   public sendText(text: string) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!this.session) return;
     this.setState('thinking');
-    this.ws.send(
-      JSON.stringify({
-        type: 'text',
-        text,
-      })
-    );
+    try {
+      this.session.sendClientContent({ turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true });
+    } catch (error) {
+      this.callbacks.onError('Could not send text to the live conversation. Please retry.');
+    }
   }
 
   /**
@@ -361,11 +259,9 @@ export class LiveAudioClient {
       this.outputAudioCtx = null;
     }
 
-    if (this.ws) {
-      try {
-        this.ws.close();
-      } catch {}
-      this.ws = null;
+    if (this.session) {
+      try { this.session.close(); } catch {}
+      this.session = null;
     }
 
     this.setState('idle');
