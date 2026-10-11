@@ -217,6 +217,7 @@ export default function App() {
   // Client references
   const liveClientRef = useRef<LiveAudioClient | null>(null);
   const currentTurnTranscriptRef = useRef('');
+  const currentUserTranscriptRef = useRef('');
 
   // Save changes to localStorage
   useEffect(() => {
@@ -384,28 +385,48 @@ export default function App() {
         }
       },
       onTranscriptChunk: (chunk, sender) => {
+        if (sender === 'user') {
+          currentUserTranscriptRef.current += chunk;
+          setLiveSubtitle('You: ' + currentUserTranscriptRef.current);
+          return;
+        }
         currentTurnTranscriptRef.current += chunk;
         setLiveSubtitle((prev) => prev + chunk);
       },
       onTurnComplete: () => {
+        const userText = currentUserTranscriptRef.current.trim();
         const fullText = currentTurnTranscriptRef.current.trim();
-        if (fullText) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Date.now().toString(),
-              sender: 'lyra',
-              text: fullText,
-              timestamp: Date.now(),
-              status: 'read',
-            },
-          ]);
-          currentTurnTranscriptRef.current = '';
+        if (userText || fullText) {
+          setMessages((prev) => {
+            const next = [...prev];
+            if (userText) {
+              next.push({
+                id: Date.now().toString(),
+                sender: 'user',
+                text: userText,
+                timestamp: Date.now(),
+                status: 'read',
+              });
+            }
+            if (fullText) {
+              next.push({
+                id: (Date.now() + 1).toString(),
+                sender: 'lyra',
+                text: fullText,
+                timestamp: Date.now(),
+                status: 'read',
+              });
+            }
+            return next;
+          });
         }
+        currentUserTranscriptRef.current = '';
+        currentTurnTranscriptRef.current = '';
       },
       onInterrupted: () => {
         console.log('[App] Lyra interrupted by user speech');
         currentTurnTranscriptRef.current = '';
+        currentUserTranscriptRef.current = '';
         setLiveSubtitle('Listening...');
       },
       onToolCall: (call) => {
@@ -444,6 +465,7 @@ export default function App() {
     setOutputVolume(0);
     setLiveSubtitle('');
     currentTurnTranscriptRef.current = '';
+    currentUserTranscriptRef.current = '';
   };
 
   const toggleCall = () => {
