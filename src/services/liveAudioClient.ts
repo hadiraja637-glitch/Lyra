@@ -126,8 +126,6 @@ export class LiveAudioClient {
         callbacks: {
           onopen: () => {
             this.isConnected = true;
-            this.startMicrophoneProcessing();
-            this.startVisualizer();
             this.setState(this.isMuted ? 'muted' : 'listening');
           },
           onmessage: (message: any) => {
@@ -183,6 +181,14 @@ export class LiveAudioClient {
           },
         },
       });
+
+      // Wait until connect() has resolved so this.session is assigned before
+      // attaching the microphone processor. Starting inside onopen can race
+      // the promise assignment and silently leave the microphone disconnected.
+      if (this.isConnected && this.session) {
+        this.startMicrophoneProcessing();
+        this.startVisualizer();
+      }
     } catch (error: any) {
       const message = error?.message || 'Could not start Lyra. Please try again.';
       this.callbacks.onError(message);
