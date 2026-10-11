@@ -45,6 +45,27 @@ import {
 } from 'lucide-react';
 import { usePWAInstall } from './hooks/usePWAInstall';
 
+
+async function readJsonResponse(response: Response): Promise<any> {
+  const raw = await response.text();
+  const contentType = response.headers.get('content-type') || '';
+  let data: any = null;
+  if (contentType.includes('application/json')) {
+    try { data = JSON.parse(raw); } catch {
+      throw new Error(`Lyra API returned malformed JSON (HTTP ${response.status}). Please check the Vercel function logs.`);
+    }
+  } else {
+    const detail = raw.trim().startsWith('<') || /<!doctype html/i.test(raw)
+      ? 'Vercel returned an HTML page instead of JSON. The API route may be missing or the deployment may still be building.'
+      : (raw.slice(0, 180) || 'The API returned an empty response.');
+    throw new Error(`${detail} (HTTP ${response.status}).`);
+  }
+  if (!response.ok || data?.error) {
+    throw new Error(data?.error || `Lyra API request failed (HTTP ${response.status}).`);
+  }
+  return data;
+}
+
 const STORAGE_KEY_SETTINGS = 'lyra_user_settings';
 const STORAGE_KEY_TASKS = 'lyra_tasks';
 const STORAGE_KEY_NOTES = 'lyra_notes';
@@ -478,7 +499,7 @@ export default function App() {
         }),
       });
 
-      const data = await res.json();
+      const data = await readJsonResponse(res);
       if (data.error) throw new Error(data.error);
 
       if (data.newMemory) {
@@ -564,7 +585,7 @@ export default function App() {
         }),
       });
 
-      const data = await res.json();
+      const data = await readJsonResponse(res);
       if (data.error) throw new Error(data.error);
 
       if (data.newMemory) {
@@ -689,7 +710,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ memories }),
       });
-      const data = await res.json();
+      const data = await readJsonResponse(res);
       if (data.memories && Array.isArray(data.memories)) {
         setMemories(data.memories);
       }
