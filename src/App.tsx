@@ -1242,7 +1242,7 @@ export default function App() {
           }`}
         >
           <Laptop className="w-3.5 h-3.5" />
-          <span>{isInstalled ? 'Installed Desktop App' : 'Install Windows App'}</span>
+          <span>{isInstalled ? 'Installed Desktop App' : 'Install Lyra'}</span>
         </button>
       </footer>
 
