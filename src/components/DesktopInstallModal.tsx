@@ -45,9 +45,9 @@ export const DesktopInstallModal: React.FC<DesktopInstallModalProps> = ({
               <Laptop className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold">Install Lyra on Windows PC</h2>
+              <h2 className="text-sm font-semibold">Install Lyra on Your Device</h2>
               <p className={`text-xs ${isNight ? 'text-slate-400' : 'text-slate-500'}`}>
-                Run as a standalone desktop application
+                Install on PC, Android, or iPhone
               </p>
             </div>
           </div>
@@ -182,7 +182,7 @@ export const DesktopInstallModal: React.FC<DesktopInstallModalProps> = ({
           {/* Manual Install Instructions for Edge/Chrome */}
           <div className="space-y-2">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Manual Installation Steps in Windows
+              Manual Installation Steps
             </h3>
 
             <div
@@ -207,6 +207,34 @@ export const DesktopInstallModal: React.FC<DesktopInstallModalProps> = ({
                   Click the <strong>Install icon (monitor with down arrow)</strong> in the address bar, or click <strong>Menu &gt; Cast, save, and share &gt; Install Lyra</strong>.
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* Mobile installation instructions */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Install on Your Phone
+            </h3>
+            <div
+              className={`p-3.5 rounded-2xl border space-y-3 text-xs leading-relaxed ${
+                isNight ? 'bg-[#0b1022] border-[#1e2a4a]' : 'bg-slate-50 border-slate-200'
+              }`}
+            >
+              <div>
+                <strong className={isNight ? 'text-amber-300' : 'text-indigo-700'}>Android (Chrome):</strong>
+                <p className={`mt-0.5 ${isNight ? 'text-slate-300' : 'text-slate-600'}`}>
+                  Open Lyra in Chrome, tap the three dots (⋮), then choose <strong>Install app</strong> or <strong>Add to Home screen</strong>. Confirm the prompt. The wording can vary by phone/browser.
+                </p>
+              </div>
+              <div className="pt-2 border-t border-slate-800/40">
+                <strong className={isNight ? 'text-amber-300' : 'text-indigo-700'}>iPhone (Safari):</strong>
+                <p className={`mt-0.5 ${isNight ? 'text-slate-300' : 'text-slate-600'}`}>
+                  Open Lyra in Safari, tap the <strong>Share</strong> icon, scroll down, choose <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>. Use Safari for this option; it may not appear in other iPhone browsers.
+                </p>
+              </div>
+              <p className={isNight ? 'text-slate-400' : 'text-slate-500'}>
+                After adding it, launch Lyra from your Home Screen. Allow microphone access when asked so voice chat can work. An internet connection is still needed for the live AI conversation.
+              </p>
             </div>
           </div>
 
