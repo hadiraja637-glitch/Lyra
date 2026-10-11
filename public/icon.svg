@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="50%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#030712" />
+    </radialGradient>
+    <radialGradient id="aura" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.35" />
+      <stop offset="60%" stop-color="#6366f1" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="star" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="50%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+
+  <!-- Outer Sonic Glow Aura -->
+  <circle cx="256" cy="256" r="190" fill="url(#aura)" />
+
+  <!-- Frequency Orbit Rings -->
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#818cf8" stroke-width="3" stroke-opacity="0.4" stroke-dasharray="8 8" />
+  <circle cx="256" cy="256" r="115" fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-opacity="0.5" />
+
+  <!-- Central Star of Lyra -->
+  <path d="M 256,120 Q 256,220 356,256 Q 256,292 256,392 Q 256,292 156,256 Q 256,220 256,120 Z" fill="url(#star)" />
+  
+  <!-- Core Luminous Spark -->
+  <circle cx="256" cy="256" r="28" fill="#ffffff" opacity="0.95" />
+  
+  <!-- Sparkles -->
+  <circle cx="360" cy="160" r="8" fill="#fef08a" opacity="0.8" />
+  <circle cx="150" cy="350" r="6" fill="#818cf8" opacity="0.8" />
+  <circle cx="160" cy="170" r="5" fill="#fde047" opacity="0.7" />
+  <circle cx="350" cy="340" r="7" fill="#fbbf24" opacity="0.75" />
+</svg>

@@ -1,0 +1,10 @@
+{
+  "name": "Lyra — Real-Time AI Voice Companion",
+  "description": "A natural, intelligent, supportive real-time voice companion powered by Gemini Live with seamless multilingual conversation, study tools, and expressive animations.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
