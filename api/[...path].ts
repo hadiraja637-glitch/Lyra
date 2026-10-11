@@ -1,5 +1,7 @@
 import { GoogleGenAI, Modality } from '@google/genai';
 
+export const config = { maxDuration: 60 };
+
 type Memory = {
   id: string;
   category: string;
@@ -251,7 +253,7 @@ export default async function handler(req: any, res: any) {
       }
       const audioBase64 = String(body.audioBase64 || '');
       if (!audioBase64) return json(res, 400, { error: 'Audio data is required.' });
-      if (audioBase64.length > 5_500_000) {
+      if (audioBase64.length > 4_000_000) {
         return json(res, 413, { error: 'This voice recording is too large for the current Vercel request limit. Please send a shorter voice message.' });
       }
       const memories = Array.isArray(body.memories) ? body.memories as Memory[] : [];
