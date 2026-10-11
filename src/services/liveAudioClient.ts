@@ -69,7 +69,7 @@ export class LiveAudioClient {
         throw new Error(detail);
       }
 
-      this.inputContext = new AudioContext({ sampleRate: 16000 });
+      this.inputContext = new AudioContext();
       this.outputContext = new AudioContext();
       await Promise.all([this.inputContext.resume(), this.outputContext.resume()]);
 
@@ -108,6 +108,7 @@ export class LiveAudioClient {
         model: 'gemini-3.8-live',
         config: {
           responseModalities: [Modality.AUDIO],
+          inputAudioTranscription: {},
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: settings.voice || 'Kore' },
@@ -130,6 +131,10 @@ export class LiveAudioClient {
             this.setState(this.isMuted ? 'muted' : 'listening');
           },
           onmessage: (message: any) => {
+            const userTranscript = message.serverContent?.inputTranscription?.text;
+            if (typeof userTranscript === 'string' && userTranscript.trim()) {
+              this.callbacks.onTranscriptChunk(userTranscript, 'user');
+            }
             if (message.serverContent?.modelTurn?.parts) {
               for (const part of message.serverContent.modelTurn.parts) {
                 if (part.inlineData?.data) this.playAudioChunk(part.inlineData.data);
@@ -191,8 +196,10 @@ export class LiveAudioClient {
     if (!this.inputContext || !this.mediaStream || !this.session) return;
     this.sourceNode = this.inputContext.createMediaStreamSource(this.mediaStream);
     this.processorNode = this.inputContext.createScriptProcessor(4096, 1, 1);
-    this.sourceNode.connect(this.inputAnalyser || this.processorNode);
-    if (this.inputAnalyser) this.inputAnalyser.connect(this.processorNode);
+    // Feed the processor directly from the microphone. Keep the analyser on a
+    // separate branch so it cannot interrupt the audio path to Gemini.
+    this.sourceNode.connect(this.processorNode);
+    if (this.inputAnalyser) this.sourceNode.connect(this.inputAnalyser);
     this.processorNode.onaudioprocess = (event) => {
       const input = event.inputBuffer.getChannelData(0);
       let sum = 0;
@@ -201,9 +208,12 @@ export class LiveAudioClient {
       const output = event.outputBuffer.getChannelData(0);
       output.fill(0);
       if (this.isMuted || !this.isConnected || !this.session) return;
-      const pcm = new Int16Array(input.length);
-      for (let i = 0; i < input.length; i++) {
-        const sample = Math.max(-1, Math.min(1, input[i]));
+      // Gemini Live expects 16 kHz PCM. Do not assume the browser's actual
+      // microphone sample rate matches the requested AudioContext rate.
+      const samples16k = this.resampleToRate(input, event.inputBuffer.sampleRate, 16000);
+      const pcm = new Int16Array(samples16k.length);
+      for (let i = 0; i < samples16k.length; i++) {
+        const sample = Math.max(-1, Math.min(1, samples16k[i]));
         pcm[i] = sample < 0 ? sample * 32768 : sample * 32767;
       }
       let binary = '';
@@ -218,6 +228,21 @@ export class LiveAudioClient {
       }
     };
     this.processorNode.connect(this.inputContext.destination);
+  }
+
+  private resampleToRate(input: Float32Array, inputRate: number, outputRate: number): Float32Array {
+    if (!input.length || inputRate === outputRate) return input;
+    const outputLength = Math.max(1, Math.floor(input.length * outputRate / inputRate));
+    const output = new Float32Array(outputLength);
+    const ratio = inputRate / outputRate;
+    for (let i = 0; i < outputLength; i++) {
+      const position = i * ratio;
+      const left = Math.min(input.length - 1, Math.floor(position));
+      const right = Math.min(input.length - 1, left + 1);
+      const fraction = position - left;
+      output[i] = input[left] * (1 - fraction) + input[right] * fraction;
+    }
+    return output;
   }
 
   private playAudioChunk(base64Audio: string) {
