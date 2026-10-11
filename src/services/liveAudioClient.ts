@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 
 export class LiveAudioClient {
   private ai: GoogleGenAI;
@@ -8,7 +8,7 @@ export class LiveAudioClient {
   private isConnected = false;
 
   constructor() {
-    const apiKey = process.env.GEMINI_API_KEY || '';
+    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
     this.ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: 'v1beta' } });
   }
 
@@ -46,11 +46,7 @@ export class LiveAudioClient {
         throw new Error(detail);
       }
 
-      const liveAI = new GoogleGenAI({
-        apiKey: tokenData.token,
-        httpOptions: { apiVersion: 'v1beta' },
-      });
-
+      // Initialize audio context and mic stream safely
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       this.isConnected = true;
