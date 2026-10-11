@@ -8,7 +8,7 @@ export class LiveAudioClient {
   private isConnected = false;
 
   constructor() {
-    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+    const apiKey = process.env.GEMINI_API_KEY || '';
     this.ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: 'v1beta' } });
   }
 
